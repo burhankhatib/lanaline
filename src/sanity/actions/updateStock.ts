@@ -1,116 +1,67 @@
-import { DocumentActionComponent, DocumentActionProps } from 'sanity'
-import { studioClient } from '../lib/studioClient'
+// src/sanity/actions/updateStock.ts
+import { DocumentActionProps, SanityDocument, ToastParams } from 'sanity'
+import { createClient } from '@sanity/client'
 
-interface CheckoutItem {
-  product?: {
-    _ref: string
-  }
-  quantity: number
+interface ProductDocument extends SanityDocument {
+  _id: string;
+  _type: string;
+  title?: string;
+  stock?: number;
 }
 
-interface CheckoutDocument {
-  _id: string
-  _type: string
-  status?: string
-  items?: CheckoutItem[]
+interface ExtendedDocumentActionProps extends DocumentActionProps {
+  toast?: {
+    push: (params: ToastParams) => void;
+  };
 }
 
-export const updateStock: DocumentActionComponent = (props: DocumentActionProps) => {
-  const published = props.published as CheckoutDocument | null
+export const updateStock = (props: ExtendedDocumentActionProps) => {
+  const { published, onComplete } = props;
+  const doc = published as ProductDocument | null;
   
-  console.log('Update Stock Action - Document:', published)
-  
-  if (!published) {
-    console.warn('Update Stock Action - No published document found')
-    return null
-  }
-  
-  if (published.status !== 'processing') {
-    console.log('Update Stock Action - Status is not processing:', published.status)
-    return null
+  if (!doc) {
+    return null;
   }
 
   return {
-    label: 'Update Stock',
+    label: `Update Stock: ${doc.stock || 0}`,
     onHandle: async () => {
       try {
-        console.log('Update Stock Action - Starting stock update')
+        const client = createClient({
+          projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID!,
+          dataset: process.env.NEXT_PUBLIC_SANITY_DATASET!,
+          apiVersion: '2024-05-23',
+          useCdn: false,
+        });
+
+        // Get current stock value
+        const currentStock = doc.stock || 0;
         
-        // Get all items from the checkout
-        const items = published.items || []
-        console.log('Update Stock Action - Items:', items)
+        // Update the document with new stock value
+        await client
+          .patch(doc._id)
+          .set({ 
+            stock: currentStock,
+            updatedAt: new Date().toISOString() 
+          })
+          .commit();
 
-        if (items.length === 0) {
-          throw new Error('No items found in the order')
-        }
-
-        // Start a transaction for all stock updates
-        const transaction = studioClient.transaction()
-
-        // First, verify all products have sufficient stock
-        for (const item of items) {
-          if (!item.product?._ref) {
-            console.warn('Skipping item due to missing product reference:', item)
-            continue
-          }
-
-          const product = await studioClient.fetch(`*[_id == $id][0]`, { id: item.product._ref })
-          
-          if (!product) {
-            throw new Error(`Product not found for ID: ${item.product._ref}`)
-          }
-
-          const currentStock = product.stock || 0
-          if (currentStock < item.quantity) {
-            throw new Error(`Insufficient stock for product ${product.title?.en || product._id}. Available: ${currentStock}, Requested: ${item.quantity}`)
-          }
-        }
-
-        // Then update stock for each product
-        for (const item of items) {
-          if (!item.product?._ref) continue
-
-          try {
-            // Get the current product
-            const product = await studioClient.fetch(`*[_id == $id][0]`, { id: item.product._ref })
-            
-            if (!product) {
-              throw new Error(`Product not found for ID: ${item.product._ref}`)
-            }
-
-            // Calculate new stock
-            const currentStock = product.stock || 0
-            const newStock = currentStock - item.quantity
-
-            // Add stock update to transaction
-            transaction.patch(item.product._ref, (p) => p.set({ stock: newStock }))
-            
-            console.log(`Update Stock Action - Preparing stock update for product ${product._id}: ${currentStock} -> ${newStock} (quantity: ${item.quantity})`)
-          } catch (error) {
-            console.error(`Error preparing stock update for product ${item.product._ref}:`, error)
-            throw new Error(`Failed to prepare stock update: ${error.message}`)
-          }
-        }
-
-        // Commit all stock updates
-        await transaction.commit()
-        console.log('Update Stock Action - Successfully committed stock updates')
-
-        // Update checkout status to shipped
-        console.log('Update Stock Action - Updating order status to shipped')
-        await studioClient
-          .patch(published._id)
-          .set({ status: 'shipped' })
-          .commit()
-
-        console.log('Update Stock Action - Successfully completed')
-        return {
-          message: 'Stock updated successfully'
-        }
+        props.toast?.push({ 
+          status: 'success', 
+          title: 'Stock Updated', 
+          description: `Stock for ${doc.title || 'Product'} is now ${currentStock}` 
+        } as ToastParams);
+        
       } catch (error) {
-        console.error('Update Stock Action - Error:', error)
-        throw new Error(`Failed to update stock: ${error.message}`)
+        console.error('Update Stock Action - Error:', error);
+        props.toast?.push({ 
+          status: 'error', 
+          title: 'Failed to update stock', 
+          description: error instanceof Error ? error.message : String(error)
+        } as ToastParams);
+      } finally {
+        onComplete();
       }
     }
-  }
+  };
 } 

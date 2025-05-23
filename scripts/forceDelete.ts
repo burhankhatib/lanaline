@@ -11,7 +11,7 @@ const client: SanityClient = createClient({
     projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
     dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
     apiVersion: '2024-03-19',
-    token: process.env.SANITY_API_TOKEN, // You'll need to create a token with write access
+    token: process.env.SANITY_API_WRITE_TOKEN, // You'll need to create a token with write access
     useCdn: false
 })
 

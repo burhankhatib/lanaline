@@ -1,79 +1,82 @@
-import { DocumentActionComponent, DocumentActionProps } from 'sanity'
-import { studioClient } from '../lib/studioClient'
+// src/sanity/actions/updateOrderStatus.ts
+import { DocumentActionProps, SanityDocument, ToastParams } from 'sanity'
 import { restoreStock } from '@/app/actions/order'
+import { createClient } from '@sanity/client'
 
-interface CheckoutDocument {
-  _id: string
-  _type: string
-  status?: string
-  items?: Array<{
-    product?: {
-      _ref: string
-    }
-    quantity: number
-  }>
+// ... (interfaces remain the same) ...
+interface CheckoutDocument extends SanityDocument {
+    _id: string;
+    _type: string;
+    status?: string;
+    orderNumber?: string;
+    items?: Array<{
+      product?: {
+        _ref: string;
+      };
+      quantity: number;
+    }>;
 }
 
-export const updateOrderStatus: DocumentActionComponent = (props: DocumentActionProps) => {
-  const published = props.published as CheckoutDocument | null
+interface ExtendedDocumentActionProps extends DocumentActionProps {
+  toast?: {
+    push: (params: ToastParams) => void;
+  };
+}
+
+export const updateOrderStatus = (props: ExtendedDocumentActionProps) => {
+  const { published, onComplete } = props;
+  const doc = published as CheckoutDocument | null;
   
-  console.log('Update Order Status Action - Document:', published)
-  
-  if (!published) {
-    console.warn('Update Order Status Action - No published document found')
-    return null
+  if (!doc) {
+    return null;
   }
 
   return {
-    label: 'Update Status',
+    label: `Process Status: ${doc.status || 'N/A'}`,
     onHandle: async () => {
+      if (!doc.status) {
+        props.toast?.push({ status: 'error', title: 'Order status is not set.'} as ToastParams);
+        onComplete();
+        return;
+      }
+      
       try {
-        // Get the current status
-        const currentStatus = published.status || 'pending'
-        console.log('Update Order Status Action - Current status:', currentStatus)
+        let stockRestoredMessage = '';
+        if (doc.status === 'cancelled' || doc.status === 'refunded') {
+          props.toast?.push({ status: 'info', title: `Order ${doc.orderNumber} is ${doc.status}. Attempting to restore stock...`} as ToastParams);
+          
+          const restoreResult = await restoreStock(doc._id);
+          
+          if (restoreResult.success) {
+            stockRestoredMessage = 'Stock restored successfully.';
+            props.toast?.push({ status: 'success', title: 'Stock Restored', description: `For order ${doc.orderNumber}.`} as ToastParams);
+          } else {
+            stockRestoredMessage = `Stock restoration failed: ${restoreResult.message}`;
+            props.toast?.push({ status: 'error', title: 'Stock Restoration Failed', description: restoreResult.message } as ToastParams);
+          }
+        }
+
+        // Update the document
+        const client = createClient({
+          projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID!,
+          dataset: process.env.NEXT_PUBLIC_SANITY_DATASET!,
+          apiVersion: '2024-05-23',
+          useCdn: false,
+        });
+
+        await client
+          .patch(doc._id)
+          .set({ updatedAt: new Date().toISOString() })
+          .commit();
+
+        props.toast?.push({ status: 'success', title: `Order ${doc.orderNumber} status processed. ${stockRestoredMessage}`.trim()} as ToastParams);
         
-        // First update the order status
-        console.log('Update Order Status Action - Updating order status to:', currentStatus)
-        await studioClient
-          .patch(published._id)
-          .set({ 
-            status: currentStatus,
-            updatedAt: new Date().toISOString()
-          })
-          .commit()
-
-        // Then restore stock if the status is cancelled or refunded
-        if (currentStatus === 'cancelled' || currentStatus === 'refunded') {
-          console.log(`Update Order Status Action - Order ${published._id} is ${currentStatus}, restoring stock...`)
-          
-          // Get the items before restoring stock
-          const items = published.items || []
-          console.log('Update Order Status Action - Items to restore:', items)
-          
-          if (items.length === 0) {
-            console.warn('Update Order Status Action - No items found in order')
-            return {
-              message: `Order status updated to ${currentStatus} (no items to restore)`
-            }
-          }
-
-          try {
-            await restoreStock(published._id)
-            console.log('Update Order Status Action - Stock restored successfully')
-          } catch (error) {
-            console.error('Update Order Status Action - Error restoring stock:', error)
-            // Continue even if stock restoration fails
-          }
-        }
-
-        console.log('Update Order Status Action - Order status updated successfully')
-        return {
-          message: `Order status updated to ${currentStatus}`
-        }
       } catch (error) {
-        console.error('Update Order Status Action - Error:', error)
-        throw new Error(`Failed to update order status: ${error.message}`)
+        console.error('Update Order Status Action - Error:', error);
+        props.toast?.push({ status: 'error', title: 'Failed to process order status', description: error instanceof Error ? error.message : String(error)} as ToastParams);
+      } finally {
+        onComplete();
       }
     }
-  }
-} 
+  };
+}

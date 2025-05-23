@@ -70,7 +70,6 @@ export type Checkout = {
     };
     quantity?: number;
     price?: number;
-    stock?: number;
     _key: string;
   }>;
   totalAmount?: number;

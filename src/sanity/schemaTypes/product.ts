@@ -178,7 +178,8 @@ export const product = defineType({
             title: 'Stock',
             type: 'number',
             group: 'pricing',
-            initialValue: 0
+            initialValue: 0,
+            validation: Rule => Rule.min(0).integer().error('Stock cannot be negative.') // Added validation
         }),
         defineField({
             name: 'isFeatured',

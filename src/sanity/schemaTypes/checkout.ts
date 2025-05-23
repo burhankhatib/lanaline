@@ -66,12 +66,7 @@ export const checkout = defineType({
                         type: 'number',
                         validation: Rule => Rule.required().min(0)
                     },
-                    {
-                        name: 'stock',
-                        title: 'Stock',
-                        type: 'number',
-                        validation: Rule => Rule.required().min(0)
-                    }
+                  
                 ]
             }],
             components: {

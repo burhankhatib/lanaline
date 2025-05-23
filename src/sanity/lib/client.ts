@@ -1,6 +1,6 @@
 import { createClient } from 'next-sanity'
 
-const token = process.env.SANITY_WRITE_TOKEN
+const token = process.env.SANITY_API_WRITE_TOKEN
 const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
 const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET
 

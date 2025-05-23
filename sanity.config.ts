@@ -45,6 +45,6 @@ export default defineConfig({
     dataset,
     apiVersion,
     useCdn: false, // Set to false to ensure we're always using the latest data
-    token: process.env.NEXT_PUBLIC_SANITY_WRITE_TOKEN
+    token: process.env.SANITY_API_WRITE_TOKEN
   }
 })

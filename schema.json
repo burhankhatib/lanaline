@@ -325,13 +325,6 @@
                   "type": "number"
                 },
                 "optional": true
-              },
-              "stock": {
-                "type": "objectAttribute",
-                "value": {
-                  "type": "number"
-                },
-                "optional": true
               }
             },
             "rest": {

@@ -1,3 +1,4 @@
+// src/app/api/manage-stock/route.ts
 import { NextResponse } from 'next/server';
 import { createClient, SanityClient } from '@sanity/client';
 
@@ -22,19 +23,42 @@ interface SanityError {
   message?: string;
 }
 
+interface Product {
+  stock?: number;
+  title?: {
+    en?: string;
+  };
+  name?: string;
+}
+
+// Ensure this token is NOT prefixed with NEXT_PUBLIC_
+const sanityToken = process.env.SANITY_API_WRITE_TOKEN;
+
+if (!sanityToken) {
+  console.error(
+    "CRITICAL SECURITY RISK: SANITY_API_WRITE_TOKEN is not defined in environment variables for the manage-stock API route. Stock updates will fail and sensitive operations are at risk."
+  );
+}
+
 const sanityClient: SanityClient = createClient({
-  projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
-  dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
+  projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID!,
+  dataset: process.env.NEXT_PUBLIC_SANITY_DATASET!,
   apiVersion: '2024-05-23', // Use a current UTC date string
-  token: process.env.NEXT_PUBLIC_SANITY_WRITE_TOKEN,
+  token: sanityToken, // USE THE SERVER-ONLY TOKEN HERE
   useCdn: false,
 });
 
 export async function POST(request: Request): Promise<NextResponse> {
+  if (!sanityToken) {
+    return NextResponse.json(
+      { message: 'Configuration error: API token is missing.' },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = await request.json() as StockUpdateRequest;
     const { productIds, quantities, action } = body;
-    // productIds and quantities should be arrays of the same length for multiple items in an order
 
     if (!Array.isArray(productIds) || !Array.isArray(quantities) || productIds.length !== quantities.length) {
       return NextResponse.json({ message: 'Invalid productIds or quantities. They must be arrays of the same length.' }, { status: 400 });
@@ -55,13 +79,14 @@ export async function POST(request: Request): Promise<NextResponse> {
         }
 
         if (action === 'decrement') {
-            // Pre-check stock (important for immediate feedback)
-            const product = await sanityClient.getDocument(productId);
+            const product = await sanityClient.getDocument(productId) as Product;
             if (!product) {
                 return NextResponse.json({ message: `Product with ID ${productId} not found.` }, { status: 404 });
             }
-            if (product.stock < quantity) {
-                return NextResponse.json({ message: `Insufficient stock for product: ${product.name || productId}. Available: ${product.stock}, Requested: ${quantity}` }, { status: 400 });
+            const currentStock = typeof product.stock === 'number' ? product.stock : 0;
+            if (currentStock < quantity) {
+                const productName = product.title?.en || product.name || productId;
+                return NextResponse.json({ message: `Insufficient stock for product: ${productName}. Available: ${currentStock}, Requested: ${quantity}` }, { status: 400 });
             }
             transaction.patch(productId, (p) => p.dec({ stock: quantity }));
         } else if (action === 'increment') {
@@ -69,7 +94,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         }
     }
 
-    const result = await transaction.commit({ returnDocuments: false }); // returnDocuments: false for less data transfer
+    const result = await transaction.commit({ returnDocuments: false });
     const updatedDocDetails: UpdatedDocDetail[] = result && result.results ? result.results.map(r => ({ id: r.id, operation: r.operation })) : [];
 
     return NextResponse.json({ message: `Stock ${action}ed successfully for ${productIds.length} products.`, details: updatedDocDetails }, { status: 200 });
@@ -77,10 +102,10 @@ export async function POST(request: Request): Promise<NextResponse> {
   } catch (error: unknown) {
     console.error('Error updating stock:', error);
     const sanityError = error as SanityError;
-    // Check if the error is from Sanity due to validation (e.g., stock going below 0)
     if (sanityError.statusCode === 409 || (sanityError.response?.body?.message?.includes("Cannot decrement"))) {
         return NextResponse.json({ message: 'Insufficient stock to perform decrement for one or more items. The operation failed due to stock constraints.' }, { status: 400 });
     }
-    return NextResponse.json({ message: 'Error updating stock.', error: sanityError.message }, { status: 500 });
+    const errorMessage = sanityError.message || 'Unknown error updating stock.';
+    return NextResponse.json({ message: 'Error updating stock.', error: errorMessage }, { status: 500 });
   }
-} 
+}
