@@ -5,7 +5,7 @@ import { useCart } from '@/context/cart';
 // import { PortableText } from '@portabletext/react';
 import Image from 'next/image';
 import { format } from 'date-fns';
-import { ALL_PRODUCTS_QUERYResult } from '../../sanity.types';
+import { ALL_PRODUCTS_QUERYResult, Slug } from '../../sanity.types';
 import { urlFor } from '@/sanity/lib/image';
 import { Button } from './ui/button';
 
@@ -19,26 +19,13 @@ type CategoryReference = {
 
 type ExpandedCategory = {
     _id: string;
-    _type: 'category';
+    _type: 'category' | 'categoryAr';
     _createdAt: string;
     _updatedAt: string;
     _rev: string;
     title?: string;
-    image?: {
-        asset?: {
-            _ref: string;
-            _type: 'reference';
-            _weak?: boolean;
-        };
-        media?: unknown;
-        hotspot?: unknown;
-        crop?: unknown;
-        _type: 'image';
-    };
-    slug?: {
-        _type: string;
-        current: string;
-    };
+    image: string | null;
+    slug?: Slug;
     description?: string;
 }
 
@@ -106,12 +93,12 @@ export default function Product({ product }: { product: ALL_PRODUCTS_QUERYResult
             {/* Categories */}
             <div className="flex flex-wrap gap-2 px-4 py-2">
                 {currentLanguage.code === 'ar'
-                    ? product.categoryAr?.map((category: Category, index: number) => (
+                    ? product.categoryAr?.map((category, index) => (
                         <span key={index} className="px-2 py-1 text-sm bg-gray-100 rounded">
                             {getCategoryTitle(category)}
                         </span>
                     ))
-                    : product.category?.map((category: Category, index: number) => (
+                    : product.category?.map((category, index) => (
                         <span key={index} className="px-2 py-1 text-sm bg-gray-100 rounded">
                             {getCategoryTitle(category)}
                         </span>

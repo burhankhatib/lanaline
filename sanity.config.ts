@@ -12,7 +12,7 @@ import {structureTool} from 'sanity/structure'
 import {apiVersion, dataset, projectId} from './src/sanity/env'
 import {schema} from './src/sanity/schemaTypes'
 import {structure} from './src/sanity/structure'
-import {documentActions} from './src/sanity/documentActions'
+import {documentActions} from './src/sanity/documentActions' // Ensure this path is correct
 
 // Get token from environment variables
 const token = process.env.SANITY_WRITE_TOKEN || process.env.NEXT_PUBLIC_SANITY_WRITE_TOKEN
@@ -38,7 +38,7 @@ export default defineConfig({
     visionTool({defaultApiVersion: apiVersion}),
   ],
   document: {
-    actions: documentActions
+    actions: documentActions // Make sure this is wired up
   },
   api: {
     projectId,

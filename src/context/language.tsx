@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { Roboto, Cairo } from 'next/font/google';
+import Head from 'next/head';
 
 const roboto = Roboto({
     weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
@@ -72,7 +73,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return (
         <LanguageContext.Provider value={{ currentLanguage, setLanguage, roboto, cairo }}>
             <html lang={currentLanguage.code} dir={currentLanguage.direction}>
-                <head>
+                <Head>
                     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                     <meta name="description" content="Lana Line" />
                     <meta name="keywords" content="Lana Line, Lana Line UAE, Lana Line PS, Lana Line Saudi, Lana Line Kuwait, Lana Line Oman, Lana Line Qatar, Lana Line Bahrain, Lana Line UAE, Lana Line PS, Lana Line Saudi, Lana Line Kuwait, Lana Line Oman, Lana Line Qatar, Lana Line Bahrain" />
@@ -80,7 +81,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
                     <meta name="robots" content="index, follow" />
                     <meta name="googlebot" content="index, follow" />
                     <meta name="google" content="notranslate" />
-                </head>
+                </Head>
                 <body className={`${currentLanguage.direction === 'ltr' ? 'ltr' : 'rtl'} ${currentLanguage.direction === 'ltr' ? roboto.className : cairo.className} scroll-smooth`}>
                     {children}
                 </body>

@@ -1,50 +1,48 @@
 // src/app/actions/order.ts
 'use server'
 
-import { client } from '@/sanity/lib/client' // This client should be configured with a server-side write token
+import { client } from '@/sanity/lib/client'
 import { getUserByClerkId } from './user'
-// restoreStock function will remain, as it's used by Studio actions to call the API
-
-interface OrderItemProduct {
-    _id: string;
-    _type: string;
-    sku?: string;
-    // stock?: number; // Not needed here, current stock is on the product doc
-    _ref?: string; // If only sending ref
-    // Add any other product details you want to store on the line item itself
-    name?: string; // Example: Store product name at time of order
-}
-
-interface OrderItem {
-    product: OrderItemProduct;
-    quantity: number;
-    price: number; // Price at the time of purchase
-    _key: string;
-}
 
 interface ShippingAddress {
-    street: string;
-    city: string;
-    state: string;
-    postalCode: string;
     country: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
 }
 
 interface OrderData {
+    userId: string;
     firstName: string;
     lastName: string;
     email: string;
     phone: string;
-    items: OrderItem[];
-    totalAmount: number;
     shippingAddress: ShippingAddress;
+    items: Array<{
+        _key?: string;
+        product: {
+            _id: string;
+            sku?: string;
+        };
+        quantity: number;
+        price: number;
+    }>;
+    totalAmount: number;
     paymentMethod: string;
-    userId: string; // Clerk user ID
 }
 
-interface StockApiResponse {
-    message: string;
-    details?: Array<{ id: string; operation: string }>;
+interface OrderItem {
+    product: {
+        _id: string;
+    };
+    quantity: number;
+}
+
+interface ApiResponse {
+    message?: string;
+    success?: boolean;
+    data?: unknown;
 }
 
 export async function createOrder(orderData: OrderData) {
@@ -59,11 +57,11 @@ export async function createOrder(orderData: OrderData) {
                 lastName: orderData.lastName,
                 email: orderData.email,
                 phone: orderData.phone,
-                address: orderData.shippingAddress, // Full address object for user profile
+                address: orderData.shippingAddress,
                 country: orderData.shippingAddress.country,
-                currency: 'AED', // Consider making this dynamic
+                currency: 'AED',
                 orders: [],
-                totalSpent: 0, // Initialize totalSpent
+                totalSpent: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
             });
@@ -71,39 +69,40 @@ export async function createOrder(orderData: OrderData) {
 
         const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-        // STOCK DECREMENT IS REMOVED FROM HERE.
-        // It will be handled by a Sanity Document Action in the Studio.
+        // REMOVE THE CALL TO /api/manage-stock for 'decrement'
+        // const productIds = orderData.items.map(item => item.product._id);
+        // const quantities = orderData.items.map(item => item.quantity);
+        // const stockResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/manage-stock`, {
+        //     method: 'POST',
+        //     // ... body for decrement
+        // });
+        // if (!stockResponse.ok) {
+        //     const errorData = await stockResponse.json() as ApiErrorResponse;
+        //     throw new Error(`Failed to update stock: ${errorData.message}`);
+        // }
 
         const orderDoc = await client.create({
             _type: 'checkout',
             orderNumber,
-            user: {
-                _type: 'reference',
-                _ref: userDoc._id
-            },
-            items: orderData.items.map((item) => ({
+            user: { _type: 'reference', _ref: userDoc._id },
+            items: orderData.items.map((item: { _key?: string; product: { _id: string; sku?: string }; quantity: number; price: number }) => ({
                 _key: item._key || Math.random().toString(36).substring(7),
-                product: {
-                    _type: 'reference',
-                    _ref: item.product._id
-                },
+                product: { _type: 'reference', _ref: item.product._id },
                 quantity: item.quantity,
-                price: item.price, // Price at time of purchase
-                // Storing SKU and name on the line item can be useful for historical data
-                sku: item.product.sku || `SKU_FOR_${item.product._id.substring(0,5)}`,
-                // You might want to pass product name in orderData.items[n].product.name
-                // name: item.product.name || `Product ${item.product._id.substring(0,5)}`, 
+                price: item.price,
+                sku: item.product.sku || `SKU_AUTO_${item.product._id.substring(0,5)}`,
+                // Removed 'stock: item.product.stock || 0' from here,
+                // as line item stock snapshot might not be what you mean.
+                // The product document's stock is the source of truth.
             })),
             totalAmount: orderData.totalAmount,
-            status: 'pending', // Initial status, to be updated in Studio
+            status: 'pending', // Initial status
             shippingAddress: orderData.shippingAddress,
             paymentMethod: orderData.paymentMethod,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         });
 
-        // Update user with new order reference.
-        // Total spent should ideally be updated when payment is confirmed/order shipped.
         await client
             .patch(userDoc._id)
             .setIfMissing({ orders: [] })
@@ -112,85 +111,53 @@ export async function createOrder(orderData: OrderData) {
                 _ref: orderDoc._id,
                 _key: Math.random().toString(36).substring(7)
             }])
-            // .inc({ totalSpent: orderData.totalAmount }) // Consider moving this logic
+            // Total spent should be updated upon payment confirmation / order completion,
+            // not just creation of a 'pending' order.
+            // .inc({ totalSpent: orderData.totalAmount }) 
             .set({ updatedAt: new Date().toISOString() })
-            .commit({ autoGenerateArrayKeys: true }); // autoGenerateArrayKeys is useful here
+            .commit({ autoGenerateArrayKeys: true });
 
         return orderDoc;
     } catch (error) {
         console.error('Error creating order:', error);
-        if (error instanceof Error) {
-          throw new Error(`Failed to create order: ${error.message}`);
-        }
+        if (error instanceof Error) throw new Error(`Failed to create order: ${error.message}`);
         throw new Error('An unknown error occurred while creating the order.');
     }
 }
 
-// restoreStock function (used for cancellations/refunds from Studio)
+// restoreStock function remains as is, as it's called by a Studio action
+// and correctly calls the /api/manage-stock route.
 export async function restoreStock(orderId: string) {
+    // ... (keep existing implementation, ensure NEXT_PUBLIC_APP_URL is correctly set for this call from a server action)
+    // You might want to add better logging or error handling here based on your needs.
     try {
-        console.log('Restore Stock Action - Starting stock restoration for order:', orderId);
-        
-        // Fetch only necessary fields. Ensure product references are included.
-        const order = await client.fetch<{
-            _id: string;
-            items?: Array<{ product?: { _ref: string }; quantity: number }>;
-          }>(`*[_id == $id][0]{_id, items[]{product{_ref}, quantity}}`, { id: orderId });
-        
-        if (!order) {
-            console.error('Restore Stock Action - Order not found:', orderId);
-            throw new Error(`Order not found: ${orderId}`);
+        const order = await client.fetch(`*[_id == $id][0]{_id, items[]{product->{_id}, quantity}}`, { id: orderId });
+        if (!order || !order.items) throw new Error(`Order or items not found for ID: ${orderId}`);
+
+        const productIds = order.items.map((item: OrderItem) => item.product?._id).filter(Boolean);
+        const quantities = order.items.map((item: OrderItem) => item.quantity).filter(Boolean);
+
+        if (productIds.length === 0) return { success: true, message: "No products to restore."};
+
+        const appURL = process.env.NEXT_PUBLIC_APP_URL;
+        if (!appURL) {
+            console.error("restoreStock: NEXT_PUBLIC_APP_URL is not defined.");
+            throw new Error("Application URL is not configured for stock restoration.");
         }
 
-        const items = order.items || [];
-        if (items.length === 0) {
-            console.warn('Restore Stock Action - No items found in order to restore stock.');
-            return { success: true, message: 'No items to restore stock for.' };
-        }
-
-        const productIds = items
-            .map(item => item.product?._ref)
-            .filter((ref): ref is string => !!ref);
-        const quantities = items
-            .filter(item => !!item.product?._ref)
-            .map(item => item.quantity || 1);
-
-        if (productIds.length === 0) {
-            console.warn('Restore Stock Action - No valid product references found in items.');
-            return { success: true, message: 'No valid product references to restore stock for.' };
-        }
-        
-        const apiRouteUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/manage-stock`;
-        if (!process.env.NEXT_PUBLIC_APP_URL) {
-            console.warn("NEXT_PUBLIC_APP_URL is not set for restoreStock. API call might fail if the Studio is on a different domain or port during development.");
-        }
-
-        const stockResponse = await fetch(apiRouteUrl, {
+        const stockResponse = await fetch(`${appURL}/api/manage-stock`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                 // Add any necessary auth headers if your API is secured
-            },
-            body: JSON.stringify({
-                productIds,
-                quantities,
-                action: 'increment'
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ productIds, quantities, action: 'increment' }),
         });
-
-        const responseData = await stockResponse.json() as StockApiResponse;
-        if (!stockResponse.ok) {
-            console.error('Failed to restore stock via API:', responseData.message);
-            throw new Error(`Failed to restore stock: ${responseData.message || `HTTP ${stockResponse.status}`}`);
-        }
-
-        console.log('Restore Stock Action - Successfully called stock increment API', responseData);
+        const responseData = await stockResponse.json() as ApiResponse;
+        if (!stockResponse.ok) throw new Error(responseData.message || 'Failed to restore stock via API');
+        
+        console.log('Stock restored successfully for order:', orderId, responseData);
         return { success: true, data: responseData };
     } catch (error) {
-        console.error('Restore Stock Action - Error:', error);
-        if (error instanceof Error) {
-            return { success: false, message: error.message };
-        }
+        console.error('Error in restoreStock:', error);
+        if (error instanceof Error) return { success: false, message: error.message };
         return { success: false, message: 'Unknown error during stock restoration.' };
     }
 }

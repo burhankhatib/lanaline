@@ -6,7 +6,7 @@ interface ToastRequest {
   description?: string
 }
 
-export async function POST(req: Request) {
+export default async function toastHandler(req: Request) {
   try {
     const body = await req.json() as ToastRequest
     const { status, title, description } = body

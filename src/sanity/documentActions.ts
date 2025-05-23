@@ -1,11 +1,11 @@
 import { DocumentActionsContext, DocumentActionComponent } from 'sanity'
-import { updateStock } from './actions/updateStock'
+import { ProcessOrderAndDecrementStockAction } from './actions/processOrderAndDecrementStockAction'
 
 export const documentActions = (prev: DocumentActionComponent[], context: DocumentActionsContext) => {
   const { schemaType } = context
 
   if (schemaType === 'checkout') {
-    return [...prev, updateStock]
+    return [...prev, ProcessOrderAndDecrementStockAction]
   }
 
   return prev
